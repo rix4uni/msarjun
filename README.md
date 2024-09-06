@@ -42,10 +42,10 @@ Usage of msarjun:
 
 Single URL:
 ```
-echo "http://testphp.vulnweb.com/AJAX/infocateg.php" | msarjun.go -arjunCmd "arjun -u {urlStr} -m GET,POST,XML,JSON"
+echo "http://testphp.vulnweb.com/AJAX/infocateg.php" | msarjun -arjunCmd "arjun -u {urlStr} -m GET,POST,XML,JSON"
 ```
 
 Multiple URLs:
 ```
-cat urls.txt | msarjun.go -arjunCmd "arjun -u {urlStr} -m GET,POST,XML,JSON"
+cat urls.txt | msarjun -arjunCmd "arjun -u {urlStr} -m GET,POST,XML,JSON"
 ```
