@@ -17,7 +17,7 @@ git clone https://github.com/rix4uni/msarjun.git && cd msarjun && go build msarj
 wget https://github.com/rix4uni/msarjun/releases/download/v0.0.1/msarjun-linux-amd64-0.0.1.tgz && tar -xvzf msarjun-linux-amd64-0.0.1.tgz && rm -rf msarjun-linux-amd64-0.0.1.tgz && mv msarjun ~/go/bin/msarjun
 ```
 
-# Usage
+## Usage
 ```console
 Usage of msarjun:
   -ao string
@@ -40,7 +40,7 @@ Usage of msarjun:
         Print the version of the tool and exit.
 ```
 
-# Output Examples
+## Output Examples
 
 Single URL:
 ```
