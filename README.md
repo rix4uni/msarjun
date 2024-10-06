@@ -1,5 +1,7 @@
 # msarjun
 
+Mass scale Hidden parameters discovery using Arjun.
+
 ## Installation
 ```
 go install github.com/rix4uni/msarjun@latest
