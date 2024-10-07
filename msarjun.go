@@ -13,11 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"github.com/fatih/color"
 )
-
-// Declare package-level color functions
-var COLORCYAN = color.New(color.FgCyan).SprintFunc()
 
 // prints the version message
 const version = "0.0.1"
@@ -29,11 +25,14 @@ func printVersion() {
 // Prints the Colorful banner
 func printBanner() {
 	banner := `
- __  __  ___    __    ____   ____  __  __  _  _ 
-(  \/  )/ __)  /__\  (  _ \ (_  _)(  )(  )( \( )
- )    ( \__ \ /(__)\  )   /.-_)(   )(__)(  )  ( 
-(_/\/\_)(___/(__)(__)(_)\_)\____) (______)(_)\_)`
-fmt.Printf(COLORCYAN("%s\n%60s\n\n"), banner, "Current msarjun version "+version)
+                                  _             
+   ____ ___   _____ ____ _ _____ (_)__  __ ____ 
+  / __  __ \ / ___// __  // ___// // / / // __ \
+ / / / / / /(__  )/ /_/ // /   / // /_/ // / / /
+/_/ /_/ /_//____/ \__,_//_/ __/ / \__,_//_/ /_/ 
+                           /___/                
+`
+fmt.Printf("%s\n%60s\n\n", banner, "Current msarjun version "+version)
 
 }
 
