@@ -1,37 +1,44 @@
-# msarjun
+## msarjun
 
 Mass scale Hidden parameters discovery using Arjun.
+
+## Prerequisites
+```
+wget -q https://github.com/s0md3v/Arjun/archive/refs/tags/2.2.7.zip
+unzip -q 2.2.7.zip && cd Arjun-2.2.7 && python3 setup.py install && cd .. && rm -rf 2.2.7.zip Arjun-2.2.7
+```
 
 ## Installation
 ```
 go install github.com/rix4uni/msarjun@latest
 ```
 
-##### via clone command
+## Download prebuilt binaries
 ```
-git clone https://github.com/rix4uni/msarjun.git && cd msarjun && go build msarjun.go && mv msarjun ~/go/bin/msarjun && cd .. && rm -rf msarjun
+wget https://github.com/rix4uni/msarjun/releases/download/v0.0.2/msarjun-linux-amd64-0.0.2.tgz
+tar -xvzf msarjun-linux-amd64-0.0.2.tgz
+rm -rf msarjun-linux-amd64-0.0.2.tgz
+mv msarjun ~/go/bin/msarjun
 ```
+Or download [binary release](https://github.com/rix4uni/msarjun/releases) for your platform.
 
-##### via binary
+## Compile from source
 ```
-wget https://github.com/rix4uni/msarjun/releases/download/v0.0.1/msarjun-linux-amd64-0.0.1.tgz && tar -xvzf msarjun-linux-amd64-0.0.1.tgz && rm -rf msarjun-linux-amd64-0.0.1.tgz && mv msarjun ~/go/bin/msarjun
+git clone --depth 1 github.com/rix4uni/msarjun.git
+cd msarjun; go install
 ```
 
 ## Usage
-```console
+```
 Usage of msarjun:
   -ao string
         File to append the output instead of overwriting.
   -arjunCmd string
         Command template to execute Arjun with URL substitution as {urlStr}
-  -c int
-        Number of concurrent methods to run (default: 0, sequential)
   -json
         Output results in JSON format
   -o string
         File to save the output.
-  -p int
-        Number of URLs to process in parallel (default: 50)
   -silent
         silent mode.
   -verbose

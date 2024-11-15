@@ -11,30 +11,10 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
+
+	"github.com/rix4uni/msarjun/banner"
 )
-
-// prints the version message
-const version = "0.0.1"
-
-func printVersion() {
-	fmt.Printf("Current msarjun version %s\n", version)
-}
-
-// Prints the Colorful banner
-func printBanner() {
-	banner := `
-                                  _             
-   ____ ___   _____ ____ _ _____ (_)__  __ ____ 
-  / __  __ \ / ___// __  // ___// // / / // __ \
- / / / / / /(__  )/ /_/ // /   / // /_/ // / / /
-/_/ /_/ /_//____/ \__,_//_/ __/ / \__,_//_/ /_/ 
-                           /___/                
-`
-fmt.Printf("%s\n%60s\n\n", banner, "Current msarjun version "+version)
-
-}
 
 // Generate a random string of lowercase letters of the specified length
 func generateRandomString(length int) string {
@@ -56,11 +36,7 @@ type Result struct {
 	Parameters     []string `json:"parameters"`
 }
 
-func processURL(url string, method string, commandParts []string, jsonFlag bool, verbose bool, outputFile *os.File, wg *sync.WaitGroup, sem chan struct{}) {
-	defer wg.Done()
-	<-sem                                // Acquire a semaphore slot
-	defer func() { sem <- struct{}{} }() // Release the semaphore slot
-
+func processURL(url string, method string, commandParts []string, jsonFlag bool, verbose bool, outputFile *os.File) {
 	// Trim spaces from the method and build the command
 	method = strings.TrimSpace(method)
 	command := strings.Replace(commandParts[0], "{urlStr}", url, -1) + "-m " + method
@@ -82,7 +58,7 @@ func processURL(url string, method string, commandParts []string, jsonFlag bool,
 
 	// Running command on terminal if verbose is true
 	if verbose {
-		fmt.Printf("Running command: %s\n", command) // Debugging line to show the exact command being run
+		fmt.Printf("Running command: %s\n", command)
 	}
 
 	// Run the command
@@ -149,8 +125,6 @@ func main() {
 	// Define the flags
 	arjunCmd := flag.String("arjunCmd", "", "Command template to execute Arjun with URL substitution as {urlStr}")
 	jsonFlag := flag.Bool("json", false, "Output results in JSON format")
-	concurrency := flag.Int("c", 0, "Number of concurrent methods to run (default: 0, sequential)")
-	parallelism := flag.Int("p", 50, "Number of URLs to process in parallel")
 	outputFileFlag := flag.String("o", "", "File to save the output.")
 	appendOutputFlag := flag.String("ao", "", "File to append the output instead of overwriting.")
 	version := flag.Bool("version", false, "Print the version of the tool and exit.")
@@ -158,17 +132,15 @@ func main() {
 	verbose := flag.Bool("verbose", false, "Enable verbose output for debugging purposes.")
 	flag.Parse()
 
-	// Print version and exit if -version flag is provided
 	if *version {
-		printBanner()
-		printVersion()
-		return
-	}
+        banner.PrintBanner()
+        banner.PrintVersion()
+        return
+    }
 
-	// Don't Print banner if -silnet flag is provided
-	if !*silent {
-		printBanner()
-	}
+    if !*silent {
+        banner.PrintBanner()
+    }
 
 	// Check if the command template is provided
 	if *arjunCmd == "" {
@@ -188,12 +160,6 @@ func main() {
 	methods := strings.Split(methodsPart, ",")
 	if len(methods) == 0 {
 		fmt.Println("No methods specified after '-m'.")
-		os.Exit(1)
-	}
-
-	// Check if concurrency is greater than the number of methods
-	if *concurrency > len(methods) {
-		fmt.Printf("You cannot set concurrency (%d) more than the number of methods (%d).\n", *concurrency, len(methods))
 		os.Exit(1)
 	}
 
@@ -225,38 +191,12 @@ func main() {
 		urls = append(urls, scanner.Text())
 	}
 
-	// Check if -p flag is used with a single URL
-	if *parallelism > 1 && len(urls) == 1 {
-		fmt.Println("-p flag can only be run with multiple URLs, but a single URL was provided.")
-		os.Exit(1)
-	}
-
-	// Create a semaphore to limit the number of URLs processed in parallel
-	urlSem := make(chan struct{}, *parallelism)
-	var wg sync.WaitGroup
-
+	// Process each URL sequentially
 	for _, url := range urls {
-		urlSem <- struct{}{} // Acquire a slot for URL processing
-		wg.Add(1)
-		go func(url string) {
-			defer wg.Done()
-			defer func() { <-urlSem }() // Release the slot
-
-			// Create a semaphore to limit the number of concurrent methods
-			sem := make(chan struct{}, *concurrency)
-			var methodWg sync.WaitGroup
-
-			// Process each method for the current URL
-			for _, method := range methods {
-				methodWg.Add(1)
-				sem <- struct{}{} // Acquire a semaphore slot
-				go processURL(url, method, commandParts, *jsonFlag, *verbose, outputFile, &methodWg, sem)
-			}
-			methodWg.Wait() // Wait for all method processing to complete
-		}(url)
+		for _, method := range methods {
+			processURL(url, method, commandParts, *jsonFlag, *verbose, outputFile)
+		}
 	}
-
-	wg.Wait() // Wait for all URLs to be processed
 
 	// Check for errors during scanning
 	if err := scanner.Err(); err != nil {
