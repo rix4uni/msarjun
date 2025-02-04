@@ -5,7 +5,7 @@ import (
 )
 
 // prints the version message
-const version = "v0.0.2"
+const version = "v0.0.3"
 
 func PrintVersion() {
 	fmt.Printf("Current msarjun version %s\n", version)
@@ -13,13 +13,11 @@ func PrintVersion() {
 
 // Prints the Colorful banner
 func PrintBanner() {
-	banner := `
-                                  _             
+	banner := `                                  _             
    ____ ___   _____ ____ _ _____ (_)__  __ ____ 
   / __  __ \ / ___// __  // ___// // / / // __ \
  / / / / / /(__  )/ /_/ // /   / // /_/ // / / /
 /_/ /_/ /_//____/ \__,_//_/ __/ / \__,_//_/ /_/ 
-                           /___/
-`
-	fmt.Printf("%s\n%60s\n\n", banner, "Current msarjun version "+version)
+                           /___/`
+	fmt.Printf("%s\n%55s\n\n", banner, "Current msarjun version "+version)
 }

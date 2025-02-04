@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rix4uni/msarjun/banner"
@@ -36,7 +37,11 @@ type Result struct {
 	Parameters     []string `json:"parameters"`
 }
 
-func processURL(url string, method string, commandParts []string, jsonFlag bool, verbose bool, outputFile *os.File) {
+func processURL(url string, method string, commandParts []string, jsonFlag bool, verbose bool, outputFile *os.File, wg *sync.WaitGroup, semaphore chan struct{}) {
+	defer wg.Done()
+	semaphore <- struct{}{} // Acquire a slot
+	defer func() { <-semaphore }() // Release the slot
+
 	// Trim spaces from the method and build the command
 	method = strings.TrimSpace(method)
 	command := strings.Replace(commandParts[0], "{urlStr}", url, -1) + "-m " + method
@@ -104,8 +109,7 @@ func processURL(url string, method string, commandParts []string, jsonFlag bool,
 			// Print the modified arjun output
 			writeOutput(outputFile, arjunOutput)
 			if result.TransformedURL != "" {
-				transformedOutput := fmt.Sprintf("Transformed URL [%s]: %s\n", method, result.TransformedURL)
-				writeOutput(outputFile, transformedOutput)
+				writeOutput(outputFile, fmt.Sprintf("Transformed URL [%s]: %s\n", method, result.TransformedURL))
 			}
 		}
 	}
@@ -124,6 +128,7 @@ func writeOutput(outputFile *os.File, output string) {
 func main() {
 	// Define the flags
 	arjunCmd := flag.String("arjunCmd", "", "Command template to execute Arjun with URL substitution as {urlStr}")
+	concurrency := flag.Int("concurrency", 10, "Number of concurrent URL scans")
 	jsonFlag := flag.Bool("json", false, "Output results in JSON format")
 	outputFileFlag := flag.String("o", "", "File to save the output.")
 	appendOutputFlag := flag.String("ao", "", "File to append the output instead of overwriting.")
@@ -133,14 +138,14 @@ func main() {
 	flag.Parse()
 
 	if *version {
-        banner.PrintBanner()
-        banner.PrintVersion()
-        return
-    }
+		banner.PrintBanner()
+		banner.PrintVersion()
+		return
+	}
 
-    if !*silent {
-        banner.PrintBanner()
-    }
+	if !*silent {
+		banner.PrintBanner()
+	}
 
 	// Check if the command template is provided
 	if *arjunCmd == "" {
@@ -191,12 +196,18 @@ func main() {
 		urls = append(urls, scanner.Text())
 	}
 
+	var wg sync.WaitGroup
+	semaphore := make(chan struct{}, *concurrency)
+
 	// Process each URL sequentially
 	for _, url := range urls {
 		for _, method := range methods {
-			processURL(url, method, commandParts, *jsonFlag, *verbose, outputFile)
+			wg.Add(1)
+			go processURL(url, method, commandParts, *jsonFlag, *verbose, outputFile, &wg, semaphore)
 		}
 	}
+
+	wg.Wait()
 
 	// Check for errors during scanning
 	if err := scanner.Err(); err != nil {
