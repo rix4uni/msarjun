@@ -4,29 +4,20 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
-	"flag"
 	"fmt"
-	"math/rand"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
+	"os/user"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/rix4uni/msarjun/banner"
+	"github.com/spf13/pflag"
 )
-
-// Generate a random string of lowercase letters of the specified length
-func generateRandomString(length int) string {
-	const charset = "abcdefghijklmnopqrstuvwxyz"
-	seededRand := rand.New(rand.NewSource(time.Now().UnixNano()))
-	b := make([]byte, length)
-	for i := range b {
-		b[i] = charset[seededRand.Intn(len(charset))]
-	}
-	return string(b)
-}
 
 // Result represents the structure for JSON output
 type Result struct {
@@ -37,24 +28,21 @@ type Result struct {
 	Parameters     []string `json:"parameters"`
 }
 
-func processURL(url string, method string, commandParts []string, jsonFlag bool, verbose bool, outputFile *os.File, wg *sync.WaitGroup, semaphore chan struct{}) {
+func processURL(url string, method string, wordlistPath string, jsonFlag bool, verbose bool, tfilter bool, outputFile *os.File, wg *sync.WaitGroup, semaphore chan struct{}) {
 	defer wg.Done()
-	semaphore <- struct{}{} // Acquire a slot
+	semaphore <- struct{}{}        // Acquire a slot
 	defer func() { <-semaphore }() // Release the slot
 
-	// Trim spaces from the method and build the command
+	// Trim spaces from the method
 	method = strings.TrimSpace(method)
-	command := strings.Replace(commandParts[0], "{urlStr}", url, -1) + "-m " + method
 
-	// Split the command into executable and arguments
-	parts := strings.Fields(command)
-	if len(parts) == 0 {
-		fmt.Println("Invalid command.")
-		return
-	}
+	// Build the arjun command with default template and wordlist
+	// Build command arguments directly to handle paths with spaces correctly
+	args := []string{"-u", url, "-m", method, "-w", wordlistPath}
+	cmd := exec.Command("arjun", args...)
 
-	// The executable is the first part, and the rest are the arguments
-	cmd := exec.Command(parts[0], parts[1:]...)
+	// Build command string for display/logging
+	command := fmt.Sprintf("arjun -u %s -m %s -w %s", url, method, wordlistPath)
 
 	// Capture the command's output
 	var out bytes.Buffer
@@ -68,7 +56,9 @@ func processURL(url string, method string, commandParts []string, jsonFlag bool,
 
 	// Run the command
 	if err := cmd.Run(); err != nil {
-		fmt.Printf("Error executing command for method %s: %v\n", method, err)
+		if verbose {
+			fmt.Printf("Error executing command for method %s: %v\n", method, err)
+		}
 		return
 	}
 
@@ -87,14 +77,15 @@ func processURL(url string, method string, commandParts []string, jsonFlag bool,
 
 		// Process arjun output to extract parameters
 		if strings.Contains(arjunOutput, "Parameters found:") {
-			paramsPart := strings.Split(arjunOutput, ": ")[1]
+			paramsPart := strings.TrimSpace(strings.Split(arjunOutput, ": ")[1])
 			params := strings.Split(paramsPart, ", ")
 
-			// Construct the transformed URL with unique random strings for each parameter
+			// Construct the transformed URL with sequential msarjunN values for each parameter
 			var paramStrings []string
-			for _, param := range params {
-				randomString := generateRandomString(7)
-				paramStrings = append(paramStrings, fmt.Sprintf("%s=%s", param, randomString))
+			for i, param := range params {
+				param = strings.TrimSpace(param)
+				paramValue := fmt.Sprintf("msarjun%d", i+1)
+				paramStrings = append(paramStrings, fmt.Sprintf("%s=%s", param, paramValue))
 			}
 			transformedURL := fmt.Sprintf("%s?%s", url, strings.Join(paramStrings, "&"))
 			result.TransformedURL = transformedURL
@@ -105,6 +96,11 @@ func processURL(url string, method string, commandParts []string, jsonFlag bool,
 		if jsonFlag {
 			jsonOutput, _ := json.MarshalIndent(result, "", "  ")
 			writeOutput(outputFile, string(jsonOutput))
+		} else if tfilter {
+			// Print only the transformed URL for tool integration
+			if result.TransformedURL != "" {
+				writeOutput(outputFile, result.TransformedURL)
+			}
 		} else {
 			// Print the modified arjun output
 			writeOutput(outputFile, arjunOutput)
@@ -113,6 +109,68 @@ func processURL(url string, method string, commandParts []string, jsonFlag bool,
 			}
 		}
 	}
+}
+
+// expandHomeDir expands ~ to the user's home directory
+func expandHomeDir(path string) string {
+	if strings.HasPrefix(path, "~") {
+		usr, err := user.Current()
+		if err != nil {
+			return path
+		}
+		return filepath.Join(usr.HomeDir, path[1:])
+	}
+	return path
+}
+
+// downloadFile downloads a file from a URL and saves it to the specified filepath
+func downloadFile(url string, filepath string) error {
+	resp, err := http.Get(url)
+	if err != nil {
+		return fmt.Errorf("failed to download file: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to download file: received status code %d", resp.StatusCode)
+	}
+
+	// Create the file
+	out, err := os.Create(filepath)
+	if err != nil {
+		return fmt.Errorf("failed to create file: %v", err)
+	}
+	defer out.Close()
+
+	// Write the body to file
+	_, err = io.Copy(out, resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to write file: %v", err)
+	}
+
+	return nil
+}
+
+// ensureWordlistExists checks if the wordlist file exists, creates the directory if needed, and downloads the file if missing
+func ensureWordlistExists(wordlistPath string) error {
+	// Check if file already exists
+	if _, err := os.Stat(wordlistPath); err == nil {
+		return nil
+	}
+
+	// Create directory if it doesn't exist
+	dir := filepath.Dir(wordlistPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory %s: %v", dir, err)
+	}
+
+	// Download the wordlist file
+	downloadURL := "https://raw.githubusercontent.com/rix4uni/WordList/refs/heads/main/params.txt"
+	if err := downloadFile(downloadURL, wordlistPath); err != nil {
+		return fmt.Errorf("failed to download wordlist: %v", err)
+	}
+
+	return nil
 }
 
 func writeOutput(outputFile *os.File, output string) {
@@ -127,15 +185,17 @@ func writeOutput(outputFile *os.File, output string) {
 
 func main() {
 	// Define the flags
-	arjunCmd := flag.String("arjunCmd", "", "Command template to execute Arjun with URL substitution as {urlStr}")
-	concurrency := flag.Int("concurrency", 10, "Number of concurrent URL scans")
-	jsonFlag := flag.Bool("json", false, "Output results in JSON format")
-	outputFileFlag := flag.String("o", "", "File to save the output.")
-	appendOutputFlag := flag.String("ao", "", "File to append the output instead of overwriting.")
-	version := flag.Bool("version", false, "Print the version of the tool and exit.")
-	silent := flag.Bool("silent", false, "silent mode.")
-	verbose := flag.Bool("verbose", false, "Enable verbose output for debugging purposes.")
-	flag.Parse()
+	methods := pflag.StringP("methods", "m", "GET", "HTTP methods to test (comma-separated)")
+	wordlist := pflag.StringP("wordlist", "w", "~/.config/msarjun/params.txt", "Custom wordlist")
+	concurrency := pflag.IntP("concurrency", "c", 10, "Number of concurrent URL scans")
+	jsonFlag := pflag.BoolP("json", "j", false, "Output results in JSON format")
+	outputFileFlag := pflag.StringP("output", "o", "", "File to save the output.")
+	appendOutputFlag := pflag.StringP("append-output", "a", "", "File to append the output instead of overwriting.")
+	version := pflag.Bool("version", false, "Print the version of the tool and exit.")
+	silent := pflag.Bool("silent", false, "Silent mode.")
+	verbose := pflag.Bool("verbose", false, "Enable verbose output for debugging purposes.")
+	tfilter := pflag.BoolP("tfilter", "t", false, "Print only transformed URLs for tool integration.")
+	pflag.Parse()
 
 	if *version {
 		banner.PrintBanner()
@@ -147,24 +207,22 @@ func main() {
 		banner.PrintBanner()
 	}
 
-	// Check if the command template is provided
-	if *arjunCmd == "" {
-		fmt.Println("Please provide the arjun command template using -arjunCmd flag.")
+	// Parse methods from the -methods flag
+	methodsList := strings.Split(*methods, ",")
+	if len(methodsList) == 0 {
+		fmt.Println("No methods specified.")
 		os.Exit(1)
 	}
 
-	// Parse the command to extract the methods
-	commandParts := strings.Split(*arjunCmd, "-m")
-	if len(commandParts) != 2 {
-		fmt.Println("Invalid command format. Expected to find '-m' with methods list.")
-		os.Exit(1)
+	// Trim whitespace from each method
+	for i, method := range methodsList {
+		methodsList[i] = strings.TrimSpace(method)
 	}
 
-	// Extract and clean up the methods
-	methodsPart := strings.TrimSpace(commandParts[1])
-	methods := strings.Split(methodsPart, ",")
-	if len(methods) == 0 {
-		fmt.Println("No methods specified after '-m'.")
+	// Expand home directory in wordlist path and ensure wordlist exists
+	wordlistPath := expandHomeDir(*wordlist)
+	if err := ensureWordlistExists(wordlistPath); err != nil {
+		fmt.Printf("Error setting up wordlist: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -201,9 +259,9 @@ func main() {
 
 	// Process each URL sequentially
 	for _, url := range urls {
-		for _, method := range methods {
+		for _, method := range methodsList {
 			wg.Add(1)
-			go processURL(url, method, commandParts, *jsonFlag, *verbose, outputFile, &wg, semaphore)
+			go processURL(url, method, wordlistPath, *jsonFlag, *verbose, *tfilter, outputFile, &wg, semaphore)
 		}
 	}
 
